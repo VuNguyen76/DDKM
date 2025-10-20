@@ -1,172 +1,537 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import func
+from typing import List, Optional
+from pydantic import BaseModel
+from datetime import datetime, date
+import os
+import shutil
+
 from database import get_db
-from schemas import ClassCreate, ClassResponse, AttendanceSessionCreate, AttendanceSessionResponse, AttendanceSummary, AttendanceRecordResponse
-from models import Class, Teacher, AttendanceSession, AttendanceRecord, ClassStudent, Student, AttendanceStatus
-from routers.auth import require_teacher, get_current_user_dep
+from models import User, Teacher, Class, Student, ClassStudent, AttendanceSession, AttendanceRecord
+from routers.auth import require_teacher
 
-router = APIRouter(prefix="/api/teacher", tags=["Teacher"])
+router = APIRouter(prefix="/api/teacher", tags=["teacher"])
 
-# Class management
-@router.get("/classes", response_model=List[ClassResponse])
-def get_my_classes(db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Get teacher's classes (admin can see all classes)"""
-    # Admin can see all classes
-    if current_user.role.value == "admin":
-        classes = db.query(Class).all()
-        return classes
+class ClassInfo(BaseModel):
+    class_id: int
+    class_code: str
+    class_name: str
+    subject_code: str
+    subject_name: str
+    credits: int
+    semester: str
+    year: int
+    student_count: int
+    schedules: List[dict]
 
-    # Teacher can only see their classes
-    teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
-    if not teacher:
-        raise HTTPException(status_code=404, detail=f"Teacher profile not found for user_id={current_user.id}")
+class StudentInfo(BaseModel):
+    student_id: int
+    student_code: str
+    full_name: str
+    email: Optional[str]
+    phone: Optional[str]
+    year: Optional[int]
+    has_face_data: bool
 
-    classes = db.query(Class).filter(Class.teacher_id == teacher.id).all()
-    return classes
+class AddStudentsRequest(BaseModel):
+    student_ids: List[int]
 
-@router.post("/classes", response_model=ClassResponse)
-def create_class(class_data: ClassCreate, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Create new class"""
-    teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
-    if not teacher:
+class FaceImageInfo(BaseModel):
+    image_path: str
+    created_at: Optional[str]
+
+class AttendanceInfo(BaseModel):
+    student_id: int
+    student_code: str
+    full_name: str
+    check_in_time: Optional[datetime]
+    status: str
+    confidence: Optional[float]
+
+@router.get("/my-classes", response_model=List[ClassInfo])
+def get_my_classes(user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
         raise HTTPException(status_code=404, detail="Teacher profile not found")
-    
-    new_class = Class(
-        class_code=class_data.class_code,
-        class_name=class_data.class_name,
-        teacher_id=teacher.id,
-        semester=class_data.semester,
-        year=class_data.year,
-        schedule=class_data.schedule
-    )
-    db.add(new_class)
-    db.commit()
-    db.refresh(new_class)
-    return new_class
 
-@router.get("/classes/{class_id}/students")
-def get_class_students(class_id: int, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Get students in class"""
-    class_students = db.query(ClassStudent).filter(ClassStudent.class_id == class_id).all()
-    students = [cs.student for cs in class_students]
-    return students
+    classes = db.query(Class).filter(Class.teacher_id == user.teacher.id).all()
+
+    result = []
+    for cls in classes:
+        student_count = db.query(ClassStudent).filter(ClassStudent.class_id == cls.id).count()
+
+        schedules = []
+        for schedule in cls.schedules:
+            schedules.append({
+                "day_of_week": schedule.day_of_week,
+                "start_time": str(schedule.start_time),
+                "end_time": str(schedule.end_time),
+                "room": schedule.room,
+                "mode": schedule.mode
+            })
+
+        result.append(ClassInfo(
+            class_id=cls.id,
+            class_code=cls.class_code,
+            class_name=cls.class_name,
+            subject_code=cls.subject.subject_code,
+            subject_name=cls.subject.subject_name,
+            credits=cls.subject.credits,
+            semester=cls.semester,
+            year=cls.year,
+            student_count=student_count,
+            schedules=schedules
+        ))
+
+    return result
+
+@router.get("/classes/{class_id}/students", response_model=List[StudentInfo])
+def get_class_students(class_id: int, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollments = db.query(ClassStudent).filter(ClassStudent.class_id == class_id).all()
+
+    result = []
+    for enrollment in enrollments:
+        student = enrollment.student
+
+        face_data_path = os.path.join("Dataset", "FaceData", "processed", student.student_code)
+        has_face_data = os.path.exists(face_data_path) and len(os.listdir(face_data_path)) > 0
+
+        result.append(StudentInfo(
+            student_id=student.id,
+            student_code=student.student_code,
+            full_name=student.full_name,
+            email=student.email,
+            phone=student.phone,
+            year=student.year,
+            has_face_data=has_face_data
+        ))
+
+    return result
 
 @router.post("/classes/{class_id}/students")
-def add_student_to_class(class_id: int, student_id: int, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Add student to class"""
-    # Check if already enrolled
-    existing = db.query(ClassStudent).filter(
+def add_students_to_class(class_id: int, request: AddStudentsRequest, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    added_count = 0
+    for student_id in request.student_ids:
+        student = db.query(Student).filter(Student.id == student_id).first()
+        if not student:
+            continue
+
+        existing = db.query(ClassStudent).filter(
+            ClassStudent.class_id == class_id,
+            ClassStudent.student_id == student_id
+        ).first()
+
+        if not existing:
+            enrollment = ClassStudent(class_id=class_id, student_id=student_id)
+            db.add(enrollment)
+            added_count += 1
+
+    db.commit()
+
+    return {"message": f"Added {added_count} students to class", "added_count": added_count}
+
+@router.delete("/classes/{class_id}/students/{student_id}")
+def remove_student_from_class(class_id: int, student_id: int, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollment = db.query(ClassStudent).filter(
         ClassStudent.class_id == class_id,
         ClassStudent.student_id == student_id
     ).first()
-    
-    if existing:
-        raise HTTPException(status_code=400, detail="Student already enrolled")
-    
-    class_student = ClassStudent(class_id=class_id, student_id=student_id)
-    db.add(class_student)
+
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not enrolled in this class")
+
+    db.delete(enrollment)
     db.commit()
-    return {"message": "Student added to class"}
 
-# Attendance session management
-@router.post("/attendance/sessions", response_model=AttendanceSessionResponse)
-def create_attendance_session(session_data: AttendanceSessionCreate, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Create attendance session (admin and teacher)"""
-    # Admin can create session for any class
-    if current_user.role.value == "admin":
-        # Use first teacher as creator (or create a default teacher)
-        teacher = db.query(Teacher).first()
-        if not teacher:
-            raise HTTPException(status_code=404, detail="No teacher found in system")
-    else:
-        # Teacher can only create session for their classes
-        teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
-        if not teacher:
-            raise HTTPException(status_code=404, detail="Teacher profile not found")
+    return {"message": "Student removed from class"}
 
-    session = AttendanceSession(
-        class_id=session_data.class_id,
-        session_name=session_data.session_name,
-        session_date=session_data.session_date,
-        created_by=teacher.id
-    )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-    return session
-
-@router.get("/attendance/sessions", response_model=List[AttendanceSessionResponse])
-def get_my_sessions(db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Get attendance sessions (admin can see all)"""
-    # Admin can see all sessions
-    if current_user.role.value == "admin":
-        sessions = db.query(AttendanceSession).all()
-        return sessions
-
-    # Teacher can only see their sessions
-    teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
-    if not teacher:
+@router.get("/students/{student_id}/face-images", response_model=List[FaceImageInfo])
+def get_student_face_images(student_id: int, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
         raise HTTPException(status_code=404, detail="Teacher profile not found")
 
-    sessions = db.query(AttendanceSession).filter(AttendanceSession.created_by == teacher.id).all()
-    return sessions
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
 
-@router.get("/attendance/sessions/{session_id}", response_model=AttendanceSessionResponse)
-def get_session_detail(session_id: int, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Get attendance session detail"""
-    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    enrolled_classes = db.query(ClassStudent).filter(
+        ClassStudent.student_id == student_id,
+        ClassStudent.class_id.in_(
+            db.query(Class.id).filter(Class.teacher_id == user.teacher.id)
+        )
+    ).first()
 
-@router.get("/attendance/sessions/{session_id}/summary", response_model=AttendanceSummary)
-def get_session_summary(session_id: int, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Get attendance summary - simple count and list"""
-    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
+    if not enrolled_classes:
+        raise HTTPException(status_code=403, detail="Student not in any of your classes")
+
+    face_data_path = os.path.join("Dataset", "FaceData", "processed", student.student_code)
+
+    if not os.path.exists(face_data_path):
+        return []
+
+    images = []
+    for filename in os.listdir(face_data_path):
+        if filename.endswith(('.jpg', '.jpeg', '.png')):
+            image_path = os.path.join(face_data_path, filename)
+            created_at = datetime.fromtimestamp(os.path.getctime(image_path)).isoformat()
+            images.append(FaceImageInfo(
+                image_path=image_path,
+                created_at=created_at
+            ))
+
+    return images
+
+@router.delete("/students/{student_id}/face-images")
+def delete_student_face_images(student_id: int, user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    enrolled_classes = db.query(ClassStudent).filter(
+        ClassStudent.student_id == student_id,
+        ClassStudent.class_id.in_(
+            db.query(Class.id).filter(Class.teacher_id == user.teacher.id)
+        )
+    ).first()
+
+    if not enrolled_classes:
+        raise HTTPException(status_code=403, detail="Student not in any of your classes")
+
+    face_data_path = os.path.join("Dataset", "FaceData", "processed", student.student_code)
+
+    if not os.path.exists(face_data_path):
+        return {"message": "No face images found", "deleted_count": 0}
+
+    deleted_count = len(os.listdir(face_data_path))
+    shutil.rmtree(face_data_path)
+
+    return {"message": f"Deleted {deleted_count} face images", "deleted_count": deleted_count}
+
+@router.get("/classes/{class_id}/attendance", response_model=List[AttendanceInfo])
+def get_class_attendance(
+    class_id: int,
+    attendance_date: Optional[date] = None,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    if not attendance_date:
+        attendance_date = date.today()
+
+    enrollments = db.query(ClassStudent).filter(ClassStudent.class_id == class_id).all()
+
+    result = []
+    for enrollment in enrollments:
+        student = enrollment.student
+
+        attendance_record = db.query(AttendanceRecord).join(AttendanceSession).filter(
+            AttendanceSession.class_id == class_id,
+            AttendanceRecord.student_id == student.id,
+            func.date(AttendanceRecord.check_in_time) == attendance_date
+        ).first()
+
+        if attendance_record:
+            result.append(AttendanceInfo(
+                student_id=student.id,
+                student_code=student.student_code,
+                full_name=student.full_name,
+                check_in_time=attendance_record.check_in_time,
+                status=attendance_record.status,
+                confidence=attendance_record.confidence
+            ))
+        else:
+            result.append(AttendanceInfo(
+                student_id=student.id,
+                student_code=student.student_code,
+                full_name=student.full_name,
+                check_in_time=None,
+                status="absent",
+                confidence=None
+            ))
+
+    return result
+
+class ManualAttendanceRequest(BaseModel):
+    student_id: int
+    status: str
+
+class StudentCreateRequest(BaseModel):
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    year: Optional[int] = None
+    password: str
+
+class StudentUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    year: Optional[int] = None
+
+@router.post("/classes/{class_id}/attendance/manual")
+def mark_manual_attendance(
+    class_id: int,
+    request: ManualAttendanceRequest,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollment = db.query(ClassStudent).filter(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == request.student_id
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not enrolled in this class")
+
+    if request.status not in ["present", "late", "absent"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Must be: present, late, or absent")
+
+    today = date.today()
+    session = db.query(AttendanceSession).filter(
+        AttendanceSession.class_id == class_id,
+        func.date(AttendanceSession.created_at) == today
+    ).first()
+
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Get all students in class
-    class_students = db.query(ClassStudent).filter(ClassStudent.class_id == session.class_id).all()
-    all_students = [cs.student for cs in class_students]
-    
-    # Get attendance records
-    records = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id).all()
-    
-    # Categorize students
-    present_students = []
-    late_students = []
-    absent_student_ids = set(s.id for s in all_students)
-    
-    for record in records:
-        if record.status == AttendanceStatus.PRESENT:
-            present_students.append(record.student)
-            absent_student_ids.discard(record.student_id)
-        elif record.status == AttendanceStatus.LATE:
-            late_students.append(record.student)
-            absent_student_ids.discard(record.student_id)
-    
-    absent_students = [s for s in all_students if s.id in absent_student_ids]
-    
+        now = datetime.now()
+        session = AttendanceSession(
+            class_id=class_id,
+            session_date=today,
+            start_time=now.time(),
+            end_time=now.time(),
+            created_by=user.id
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    existing_record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.id,
+        AttendanceRecord.student_id == request.student_id
+    ).first()
+
+    if existing_record:
+        existing_record.status = request.status
+        existing_record.check_in_time = datetime.now()
+        db.commit()
+        return {"message": "Attendance updated", "status": request.status}
+    else:
+        record = AttendanceRecord(
+            session_id=session.id,
+            student_id=request.student_id,
+            status=request.status,
+            check_in_time=datetime.now(),
+            confidence=None
+        )
+        db.add(record)
+        db.commit()
+        return {"message": "Attendance marked", "status": request.status}
+
+@router.post("/classes/{class_id}/students/new")
+def create_and_add_student(
+    class_id: int,
+    student_data: StudentCreateRequest,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    last_student = db.query(Student).order_by(Student.id.desc()).first()
+    next_number = 1 if not last_student else last_student.id + 1
+    student_code = f"SV{next_number:03d}"
+
+    student = Student(
+        student_code=student_code,
+        full_name=student_data.full_name,
+        email=student_data.email,
+        phone=student_data.phone,
+        year=student_data.year,
+        password=student_data.password
+    )
+    db.add(student)
+    db.commit()
+    db.refresh(student)
+
+    user_account = User(
+        username=student.student_code,
+        password=student_data.password,
+        role="student",
+        student_id=student.id
+    )
+    db.add(user_account)
+
+    enrollment = ClassStudent(
+        class_id=class_id,
+        student_id=student.id
+    )
+    db.add(enrollment)
+    db.commit()
+
     return {
-        "total_students": len(all_students),
-        "present_count": len(present_students),
-        "absent_count": len(absent_students),
-        "late_count": len(late_students),
-        "present_students": present_students,
-        "absent_students": absent_students,
-        "late_students": late_students
+        "student_id": student.id,
+        "student_code": student.student_code,
+        "full_name": student.full_name,
+        "message": "Student added to class successfully"
     }
 
-@router.put("/attendance/records/{record_id}")
-def update_attendance_record(record_id: int, status: AttendanceStatus, db: Session = Depends(get_db), current_user = Depends(require_teacher)):
-    """Update attendance record"""
-    record = db.query(AttendanceRecord).filter(AttendanceRecord.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    
-    record.status = status
+@router.put("/classes/{class_id}/students/{student_id}")
+def update_student_in_class(
+    class_id: int,
+    student_id: int,
+    student_data: StudentUpdateRequest,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollment = db.query(ClassStudent).filter(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == student_id
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not found in this class")
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if student_data.full_name is not None:
+        student.full_name = student_data.full_name
+    if student_data.email is not None:
+        student.email = student_data.email
+    if student_data.phone is not None:
+        student.phone = student_data.phone
+    if student_data.year is not None:
+        student.year = student_data.year
+
     db.commit()
-    return {"message": "Record updated"}
+    db.refresh(student)
+
+    return {
+        "student_id": student.id,
+        "student_code": student.student_code,
+        "full_name": student.full_name,
+        "email": student.email,
+        "phone": student.phone,
+        "year": student.year,
+        "message": "Student updated successfully"
+    }
+
+@router.delete("/classes/{class_id}/students/{student_id}")
+def remove_student_from_class(
+    class_id: int,
+    student_id: int,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollment = db.query(ClassStudent).filter(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == student_id
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not found in this class")
+
+    db.delete(enrollment)
+    db.commit()
+
+    return {"message": "Student removed from class successfully"}
+
+@router.get("/classes/{class_id}/students/{student_id}/images")
+def get_student_images(
+    class_id: int,
+    student_id: int,
+    user: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    cls = db.query(Class).filter(Class.id == class_id, Class.teacher_id == user.teacher.id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found or you don't have permission")
+
+    enrollment = db.query(ClassStudent).filter(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == student_id
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not found in this class")
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    face_data_path = f"../Dataset/FaceData/processed/{student.student_code}"
+    if not os.path.exists(face_data_path):
+        return {"student_code": student.student_code, "images": []}
+
+    images = []
+    for filename in os.listdir(face_data_path):
+        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+            image_path = os.path.join(face_data_path, filename)
+            stat = os.stat(image_path)
+            images.append({
+                "filename": filename,
+                "path": image_path,
+                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat()
+            })
+
+    return {
+        "student_code": student.student_code,
+        "full_name": student.full_name,
+        "images": images
+    }
 

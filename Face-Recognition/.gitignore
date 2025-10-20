@@ -72,3 +72,4 @@ face_recognition_app/.pub/
 # Docker
 docker-compose.override.yml
 
+*md

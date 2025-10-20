@@ -6,8 +6,7 @@ from typing import Optional
 from models import Student, AttendanceRecord, AttendanceSession
 from services.face_recognition import face_recognition_service
 from routers.auth import require_admin
-from datetime import datetime
-from config import SHIFTS, get_current_shift
+from datetime import datetime, date
 
 router = APIRouter(prefix="/api/face", tags=["Face Recognition"])
 
@@ -22,28 +21,17 @@ class FaceRecognitionResponse(BaseModel):
     message: str
 
 def get_or_create_session(db: Session, class_id: int):
-    now = datetime.now()
-    today = now.date()
-    current_shift = get_current_shift()
-
-    if not current_shift:
-        return None
+    today = date.today()
 
     session = db.query(AttendanceSession).filter(
         AttendanceSession.class_id == class_id,
-        AttendanceSession.session_date == today,
-        AttendanceSession.shift == current_shift
+        db.func.date(AttendanceSession.created_at) == today
     ).first()
 
     if not session:
-        shift_config = SHIFTS[current_shift]
         session = AttendanceSession(
             class_id=class_id,
-            session_date=today,
-            shift=current_shift,
-            start_time=shift_config["start"],
-            end_time=shift_config["end"],
-            attendance_type="face"
+            created_by=1
         )
         db.add(session)
         db.commit()

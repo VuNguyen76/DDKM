@@ -1,6 +1,11 @@
+import os
 import secrets
 from datetime import datetime, timedelta
-from config import SESSION_TIMEOUT_HOURS
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SESSION_TIMEOUT_HOURS = int(os.getenv("SESSION_TIMEOUT_HOURS", "24"))
 
 def generate_session_id() -> str:
     """Generate random session ID"""

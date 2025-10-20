@@ -9,10 +9,7 @@ services:
     volumes:
       - ./Dataset:/app/Dataset
       - ./Models:/app/Models
-      - db-data:/app/api/db
+      - ./api/.env:/app/api/.env
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
-
-volumes:
-  db-data:
