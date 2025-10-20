@@ -60,15 +60,6 @@ Thumbs.db
 .env
 *.env
 
-# Flutter
-face_recognition_app/.dart_tool/
-face_recognition_app/.flutter-plugins
-face_recognition_app/.flutter-plugins-dependencies
-face_recognition_app/.packages
-face_recognition_app/build/
-face_recognition_app/.pub-cache/
-face_recognition_app/.pub/
-
 # Docker
 docker-compose.override.yml
 

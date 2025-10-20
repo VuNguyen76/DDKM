@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime, date
+from datetime import datetime, date, time
 import os
 import shutil
 
@@ -235,6 +235,8 @@ def delete_student_face_images(student_id: int, user: User = Depends(require_tea
 def get_class_attendance(
     class_id: int,
     attendance_date: Optional[date] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
     user: User = Depends(require_teacher),
     db: Session = Depends(get_db)
 ):
@@ -248,17 +250,37 @@ def get_class_attendance(
     if not attendance_date:
         attendance_date = date.today()
 
+    # Parse time parameters if provided
+    session_start = None
+    session_end = None
+    if start_time and end_time:
+        try:
+            session_start = time.fromisoformat(start_time)
+            session_end = time.fromisoformat(end_time)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM:SS")
+
     enrollments = db.query(ClassStudent).filter(ClassStudent.class_id == class_id).all()
 
     result = []
     for enrollment in enrollments:
         student = enrollment.student
 
-        attendance_record = db.query(AttendanceRecord).join(AttendanceSession).filter(
+        # Build query with optional time filter
+        query = db.query(AttendanceRecord).join(AttendanceSession).filter(
             AttendanceSession.class_id == class_id,
             AttendanceRecord.student_id == student.id,
-            func.date(AttendanceRecord.check_in_time) == attendance_date
-        ).first()
+            AttendanceSession.session_date == attendance_date
+        )
+
+        # Add time filter if provided
+        if session_start and session_end:
+            query = query.filter(
+                AttendanceSession.start_time == session_start,
+                AttendanceSession.end_time == session_end
+            )
+
+        attendance_record = query.first()
 
         if attendance_record:
             result.append(AttendanceInfo(
@@ -284,6 +306,8 @@ def get_class_attendance(
 class ManualAttendanceRequest(BaseModel):
     student_id: int
     status: str
+    start_time: Optional[str] = None  # Format: "HH:MM:SS"
+    end_time: Optional[str] = None    # Format: "HH:MM:SS"
 
 class StudentCreateRequest(BaseModel):
     full_name: str
@@ -323,18 +347,37 @@ def mark_manual_attendance(
         raise HTTPException(status_code=400, detail="Invalid status. Must be: present, late, or absent")
 
     today = date.today()
-    session = db.query(AttendanceSession).filter(
-        AttendanceSession.class_id == class_id,
-        func.date(AttendanceSession.created_at) == today
-    ).first()
+
+    # Parse start_time and end_time if provided
+    if request.start_time and request.end_time:
+        try:
+            session_start = time.fromisoformat(request.start_time)
+            session_end = time.fromisoformat(request.end_time)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM:SS")
+
+        # Find session by date and time range
+        session = db.query(AttendanceSession).filter(
+            AttendanceSession.class_id == class_id,
+            AttendanceSession.session_date == today,
+            AttendanceSession.start_time == session_start,
+            AttendanceSession.end_time == session_end
+        ).first()
+    else:
+        # Fallback: find any session for today
+        session = db.query(AttendanceSession).filter(
+            AttendanceSession.class_id == class_id,
+            func.date(AttendanceSession.created_at) == today
+        ).first()
+        session_start = datetime.now().time()
+        session_end = datetime.now().time()
 
     if not session:
-        now = datetime.now()
         session = AttendanceSession(
             class_id=class_id,
             session_date=today,
-            start_time=now.time(),
-            end_time=now.time(),
+            start_time=session_start,
+            end_time=session_end,
             created_by=user.id
         )
         db.add(session)

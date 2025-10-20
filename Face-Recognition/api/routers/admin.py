@@ -41,6 +41,22 @@ class ClassScheduleCreate(BaseModel):
     room: str
     mode: str = "offline"
 
+# Statistics
+@router.get("/stats")
+def get_stats(db: Session = Depends(get_db), _admin = Depends(require_admin)):
+    """Get system statistics"""
+    total_students = db.query(Student).count()
+    total_teachers = db.query(Teacher).count()
+    total_classes = db.query(Class).count()
+    total_subjects = db.query(Subject).count()
+
+    return {
+        "total_students": total_students,
+        "total_teachers": total_teachers,
+        "total_classes": total_classes,
+        "total_subjects": total_subjects
+    }
+
 # Student management
 @router.get("/students")
 def get_students(db: Session = Depends(get_db), current_user = Depends(require_admin)):
@@ -80,6 +96,43 @@ def create_student(student_data: StudentCreate, db: Session = Depends(get_db), c
     db.commit()
 
     return student
+
+@router.put("/students/{student_id}")
+def update_student(student_id: int, student_data: StudentCreate, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    student.full_name = student_data.full_name
+    if student_data.email:
+        student.email = student_data.email
+    if student_data.phone:
+        student.phone = student_data.phone
+    if student_data.year:
+        student.year = student_data.year
+    if student_data.password:
+        student.password = student_data.password
+        user = db.query(User).filter(User.student_id == student.id).first()
+        if user:
+            user.password = student_data.password
+
+    db.commit()
+    db.refresh(student)
+    return student
+
+@router.delete("/students/{student_id}")
+def delete_student(student_id: int, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    user = db.query(User).filter(User.student_id == student.id).first()
+    if user:
+        db.delete(user)
+
+    db.delete(student)
+    db.commit()
+    return {"message": "Student deleted"}
 
 @router.post("/students/{student_id}/face-data")
 async def upload_face_data(student_id: int, data: dict, db: Session = Depends(get_db), _admin = Depends(require_admin)):
@@ -136,12 +189,63 @@ def create_teacher(teacher_data: TeacherCreate, db: Session = Depends(get_db), c
 
     return teacher
 
+@router.put("/teachers/{teacher_id}")
+def update_teacher(teacher_id: int, teacher_data: TeacherCreate, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    teacher = db.query(Teacher).filter(Teacher.id == teacher_id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    teacher.full_name = teacher_data.full_name
+    if teacher_data.email:
+        teacher.email = teacher_data.email
+    if teacher_data.phone:
+        teacher.phone = teacher_data.phone
+    if teacher_data.department:
+        teacher.department = teacher_data.department
+    if teacher_data.password:
+        teacher.password = teacher_data.password
+        user = db.query(User).filter(User.teacher_id == teacher.id).first()
+        if user:
+            user.password = teacher_data.password
+
+    db.commit()
+    db.refresh(teacher)
+    return teacher
+
+@router.delete("/teachers/{teacher_id}")
+def delete_teacher(teacher_id: int, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    teacher = db.query(Teacher).filter(Teacher.id == teacher_id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    user = db.query(User).filter(User.teacher_id == teacher.id).first()
+    if user:
+        db.delete(user)
+
+    db.delete(teacher)
+    db.commit()
+    return {"message": "Teacher deleted"}
+
 # Get all classes
 @router.get("/classes")
 def get_all_classes(db: Session = Depends(get_db), current_user = Depends(require_admin)):
     from models import Class
     classes = db.query(Class).all()
-    return classes
+    result = []
+    for cls in classes:
+        result.append({
+            "id": cls.id,
+            "class_code": cls.class_code,
+            "class_name": cls.class_name,
+            "subject_id": cls.subject_id,
+            "subject_name": cls.subject.subject_name if cls.subject else None,
+            "teacher_id": cls.teacher_id,
+            "teacher_name": cls.teacher.full_name if cls.teacher else None,
+            "semester": cls.semester,
+            "year": cls.year,
+            "created_at": cls.created_at.isoformat() if cls.created_at else None
+        })
+    return result
 
 @router.post("/classes")
 def create_class(class_data: ClassCreate, db: Session = Depends(get_db), _admin = Depends(require_admin)):
@@ -222,6 +326,46 @@ def add_student_to_class(class_id: int, student_id: int, db: Session = Depends(g
 
     return {"message": "Student added to class"}
 
+@router.delete("/classes/{class_id}/students/{student_id}")
+def remove_student_from_class(class_id: int, student_id: int, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    from models import ClassStudent
+
+    enrollment = db.query(ClassStudent).filter(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == student_id
+    ).first()
+
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Student not in this class")
+
+    db.delete(enrollment)
+    db.commit()
+    return {"message": "Student removed from class"}
+
+@router.get("/classes/{class_id}/students")
+def get_class_students(class_id: int, db: Session = Depends(get_db), current_user = Depends(require_admin)):
+    from models import ClassStudent
+    import os
+
+    enrollments = db.query(ClassStudent).filter(ClassStudent.class_id == class_id).all()
+    students = []
+    for enrollment in enrollments:
+        student = enrollment.student
+        face_data_path = f"../Dataset/FaceData/processed/{student.student_code}"
+        has_face_data = os.path.exists(face_data_path) and len(os.listdir(face_data_path)) > 0
+
+        students.append({
+            "student_id": student.id,
+            "student_code": student.student_code,
+            "full_name": student.full_name,
+            "email": student.email,
+            "phone": student.phone,
+            "year": student.year,
+            "has_face_data": has_face_data
+        })
+
+    return students
+
 # Attendance management
 @router.get("/attendance/sessions")
 def get_all_sessions(db: Session = Depends(get_db), _admin = Depends(require_admin)):
@@ -244,6 +388,134 @@ def get_session_summary(session_id: int, db: Session = Depends(get_db), _admin =
         "total_students": total_students,
         "present_count": present_count,
         "absent_count": total_students - present_count
+    }
+
+@router.get("/statistics/absence-rate")
+def get_absence_rate_statistics(db: Session = Depends(get_db), _admin = Depends(require_admin)):
+    from models import AttendanceSession, AttendanceRecord, ClassStudent, Class
+    from sqlalchemy import func
+
+    classes = db.query(Class).all()
+    statistics = []
+
+    for cls in classes:
+        total_sessions = db.query(AttendanceSession).filter(AttendanceSession.class_id == cls.id).count()
+        total_students = db.query(ClassStudent).filter(ClassStudent.class_id == cls.id).count()
+
+        if total_sessions == 0 or total_students == 0:
+            statistics.append({
+                "class_id": cls.id,
+                "class_code": cls.class_code,
+                "class_name": cls.class_name,
+                "total_sessions": total_sessions,
+                "total_students": total_students,
+                "total_records": 0,
+                "present_count": 0,
+                "late_count": 0,
+                "absent_count": 0,
+                "absence_rate": 0.0
+            })
+            continue
+
+        session_ids = [s.id for s in db.query(AttendanceSession).filter(AttendanceSession.class_id == cls.id).all()]
+
+        total_records = db.query(AttendanceRecord).filter(AttendanceRecord.session_id.in_(session_ids)).count()
+        present_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.status == "present"
+        ).count()
+        late_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.status == "late"
+        ).count()
+        absent_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.status == "absent"
+        ).count()
+
+        expected_records = total_sessions * total_students
+        absence_rate = (absent_count / expected_records * 100) if expected_records > 0 else 0.0
+
+        statistics.append({
+            "class_id": cls.id,
+            "class_code": cls.class_code,
+            "class_name": cls.class_name,
+            "total_sessions": total_sessions,
+            "total_students": total_students,
+            "expected_records": expected_records,
+            "total_records": total_records,
+            "present_count": present_count,
+            "late_count": late_count,
+            "absent_count": absent_count,
+            "absence_rate": round(absence_rate, 2)
+        })
+
+    return statistics
+
+@router.get("/statistics/student-absence/{student_id}")
+def get_student_absence_statistics(student_id: int, db: Session = Depends(get_db), _admin = Depends(require_admin)):
+    from models import AttendanceRecord, AttendanceSession, ClassStudent, Class
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    class_enrollments = db.query(ClassStudent).filter(ClassStudent.student_id == student_id).all()
+    class_statistics = []
+
+    for enrollment in class_enrollments:
+        cls = enrollment.class_obj
+        total_sessions = db.query(AttendanceSession).filter(AttendanceSession.class_id == cls.id).count()
+
+        session_ids = [s.id for s in db.query(AttendanceSession).filter(AttendanceSession.class_id == cls.id).all()]
+
+        total_records = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.student_id == student_id
+        ).count()
+
+        present_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.student_id == student_id,
+            AttendanceRecord.status == "present"
+        ).count()
+
+        late_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.student_id == student_id,
+            AttendanceRecord.status == "late"
+        ).count()
+
+        absent_count = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id.in_(session_ids),
+            AttendanceRecord.student_id == student_id,
+            AttendanceRecord.status == "absent"
+        ).count()
+
+        absence_rate = (absent_count / total_sessions * 100) if total_sessions > 0 else 0.0
+
+        class_statistics.append({
+            "class_id": cls.id,
+            "class_code": cls.class_code,
+            "class_name": cls.class_name,
+            "total_sessions": total_sessions,
+            "total_records": total_records,
+            "present_count": present_count,
+            "late_count": late_count,
+            "absent_count": absent_count,
+            "absence_rate": round(absence_rate, 2)
+        })
+
+    total_sessions_all = sum([stat["total_sessions"] for stat in class_statistics])
+    total_absent_all = sum([stat["absent_count"] for stat in class_statistics])
+    overall_absence_rate = (total_absent_all / total_sessions_all * 100) if total_sessions_all > 0 else 0.0
+
+    return {
+        "student_id": student.id,
+        "student_code": student.student_code,
+        "full_name": student.full_name,
+        "overall_absence_rate": round(overall_absence_rate, 2),
+        "class_statistics": class_statistics
     }
 
 # Train model
