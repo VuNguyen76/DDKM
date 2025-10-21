@@ -280,8 +280,27 @@ def update_class(class_id: int, class_data: dict, db: Session = Depends(get_db),
     cls = db.query(Class).filter(Class.id == class_id).first()
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
-    cls.class_code = class_data["class_code"]
-    cls.class_name = class_data["class_name"]
+
+    # Update fields if provided
+    if "class_name" in class_data:
+        cls.class_name = class_data["class_name"]
+    if "teacher_id" in class_data:
+        # Verify teacher exists
+        teacher = db.query(Teacher).filter(Teacher.id == class_data["teacher_id"]).first()
+        if not teacher:
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        cls.teacher_id = class_data["teacher_id"]
+    if "subject_id" in class_data:
+        # Verify subject exists
+        subject = db.query(Subject).filter(Subject.id == class_data["subject_id"]).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found")
+        cls.subject_id = class_data["subject_id"]
+    if "semester" in class_data:
+        cls.semester = class_data["semester"]
+    if "year" in class_data:
+        cls.year = class_data["year"]
+
     db.commit()
     db.refresh(cls)
     return cls

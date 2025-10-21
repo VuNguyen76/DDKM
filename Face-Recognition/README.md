@@ -1,327 +1,254 @@
-# Face Recognition Attendance System
+﻿# Face Recognition Attendance System
 
-Hệ thống điểm danh tự động bằng nhận diện khuôn mặt cho trường học.
+Hệ thống điểm danh bằng nhận diện khuôn mặt cho trường Đại học Thủy Lợi (TLU).
 
-## Tính năng
+##  Mục lục
 
-### Backend (FastAPI)
-- ✅ Nhận diện khuôn mặt (MTCNN + FaceNet + SVM)
-- ✅ REST API đầy đủ cho quản lý điểm danh
-- ✅ Tự động sinh mã sinh viên (SV001, SV002, ...)
-- ✅ Tự động sinh mã giáo viên (GV001, GV002, ...)
-- ✅ Tự động sinh mã lớp (LOP001, LOP002, ...)
-- ✅ Hệ thống 4 ca học trong ngày
-- ✅ Xác thực đơn giản (session-based)
-- ✅ Chỉ admin có thể đăng nhập
+- [Tính năng](#tính-năng)
+- [Công nghệ sử dụng](#công-nghệ-sử-dụng)
+- [Cài đặt](#cài-đặt)
+- [Chạy ứng dụng](#chạy-ứng-dụng)
+- [Chạy với Docker](#chạy-với-docker)
+- [Tài khoản mặc định](#tài-khoản-mặc-định)
+- [API Documentation](#api-documentation)
+- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
+- [Troubleshooting](#troubleshooting)
 
-### Frontend (HTML/CSS/JavaScript)
-- ✅ Trang đăng nhập
-- ✅ Dashboard tổng quan
-- ✅ Quản lý sinh viên
-- ✅ Quản lý giáo viên
-- ✅ Quản lý lớp học (gán giáo viên cho lớp)
-- ✅ Chụp ảnh tự động (50 ảnh, 1 FPS)
-- ✅ Nhận diện khuôn mặt real-time
-- ✅ Báo cáo điểm danh
+##  Tính năng
 
-## Công nghệ
+### Admin
+- Quản lý sinh viên, giáo viên, môn học, lớp học
+- Xem thống kê tổng quan
+- Quản lý lịch học và điểm danh
 
-- **Backend**: Python 3.11, FastAPI, SQLAlchemy, SQLite
-- **Face Detection**: MTCNN
-- **Face Recognition**: FaceNet (128-dim embeddings) + SVM
-- **Deployment**: Docker, Docker Compose
+### Giáo viên
+- Xem danh sách lớp học được phân công
+- Điểm danh thủ công hoặc bằng nhận diện khuôn mặt
+- Quản lý sinh viên trong lớp
+- Xem lịch giảng dạy theo ngày
 
-## Cài đặt
+### Sinh viên
+- Xem lịch học
+- Xem lịch sử điểm danh
+- Cập nhật ảnh khuôn mặt cho hệ thống nhận diện
 
-### Yêu cầu
+##  Công nghệ sử dụng
 
+### Backend
+- **FastAPI** - Python REST API framework
+- **SQLAlchemy** - ORM cho MySQL
+- **MySQL** - Database (Railway cloud)
+- **MTCNN** - Face detection
+- **FaceNet** - Face recognition
+- **SVM** - Classification
+
+### Frontend
+- **Flutter** - Cross-platform mobile framework
+- **Dart** - Programming language
+- **Material Design 3** - UI design system
+
+##  Cài đặt
+
+### Yêu cầu hệ thống
 - Python 3.11+
-- Docker & Docker Compose (cho deployment)
-- Webcam (cho chụp ảnh và nhận diện)
+- Flutter SDK 3.0+
+- MySQL 8.0+ (hoặc sử dụng Railway cloud)
+- Android Studio / Xcode (cho mobile development)
+- Docker & Docker Compose (optional)
 
-### Chạy Local (Development)
-
-1. **Clone repository**
+### 1. Clone repository
 ```bash
-git clone <repo-url>
+git clone <repository-url>
 cd Face-Recognition
 ```
 
-2. **Cài đặt dependencies**
+### 2. Cài đặt Backend
+
+#### Cài đặt Python dependencies
 ```bash
 cd api
 pip install -r requirements.txt
 ```
 
-3. **Khởi tạo database**
-```bash
-python init_db.py
+#### Cấu hình database
+Tạo file `api/.env`:
+```env
+DATABASE_URL=mysql+pymysql://root:password@localhost:3306/face_recognition
+SECRET_KEY=your-secret-key-change-this-in-production
+SESSION_TIMEOUT_HOURS=24
 ```
 
-4. **Chạy API server**
+#### Khởi tạo database
 ```bash
+python init_db.py
+python seed_data.py
+```
+
+### 3. Cài đặt Flutter
+
+```bash
+cd face_recognition_app
+flutter pub get
+```
+
+##  Chạy ứng dụng
+
+### Cách 1: Sử dụng script (Windows)
+
+#### Chạy Backend
+```bash
+run_backend.bat
+```
+
+#### Chạy Flutter (terminal mới)
+```bash
+run_flutter.bat
+```
+
+### Cách 2: Chạy thủ công
+
+#### Chạy Backend
+```bash
+cd api
 uvicorn main:app --reload --port 8000
 ```
 
-5. **Mở frontend**
-- Mở file `frontend/login.html` bằng Live Server hoặc web server
-- Hoặc dùng Python: `python -m http.server 3000` trong thư mục `frontend`
+Backend sẽ chạy tại: http://localhost:8000
 
-6. **Đăng nhập**
-- Username: `admin`
-- Password: `admin`
+API Documentation: http://localhost:8000/docs
 
-### Chạy với Docker
-
-1. **Build và start services**
+#### Chạy Flutter
 ```bash
-docker-compose up -d --build
+cd face_recognition_app
+flutter run
 ```
 
-2. **Truy cập**
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- Frontend: Mở `frontend/login.html` trong browser
-
-3. **Xem logs**
+Hoặc chỉ định device cụ thể:
 ```bash
-docker-compose logs -f
+flutter run -d emulator-5554
 ```
 
-4. **Stop services**
+##  Chạy với Docker
+
+### Build và chạy
+```bash
+docker-compose up --build
+```
+
+### Chỉ chạy (đã build trước đó)
+```bash
+docker-compose up
+```
+
+### Dừng container
 ```bash
 docker-compose down
 ```
 
-## Hướng dẫn sử dụng
+Backend trong Docker sẽ chạy tại: http://localhost:8000
 
-### 1. Tạo giáo viên
+**Lưu ý:** Database sẽ tự động được seed với dữ liệu mẫu khi container khởi động lần đầu.
 
-1. Vào trang **Dashboard**
-2. Click **Quản lý lớp**
-3. Trước tiên cần tạo giáo viên (nếu chưa có)
-4. Nhập thông tin giáo viên
-5. Hệ thống tự động sinh mã giáo viên (GV001, GV002, ...)
+##  Tài khoản mặc định
 
-### 2. Tạo lớp học
+### Admin
+- Username: `admin`
+- Password: `admin`
 
-1. Vào trang **Quản lý lớp**
-2. Click **Thêm lớp mới**
-3. Nhập tên lớp
-4. Chọn giáo viên từ dropdown
-5. Nhập học kỳ và năm học (tùy chọn)
-6. Hệ thống tự động sinh mã lớp (LOP001, LOP002, ...)
+### Giáo viên
+- Username: `GV001`
+- Password: `newteacher123`
 
-### 3. Tạo sinh viên
+### Sinh viên
+- Username: `SV001`
+- Password: `newstudent123`
 
-1. Vào trang **Chụp ảnh**
-2. Click **Thêm sinh viên mới**
-3. Nhập họ tên, email, năm học
-4. Hệ thống tự động sinh mã sinh viên (SV001, SV002, ...)
-
-### 4. Chụp ảnh khuôn mặt
-
-1. Vào trang **Chụp ảnh**
-2. Chọn sinh viên từ dropdown
-3. Click **Bắt đầu chụp**
-4. Hệ thống tự động chụp 50 ảnh (50 giây)
-5. Sau khi chụp xong, click **Train Model**
-
-### 5. Điểm danh
-
-1. Vào trang **Điểm danh**
-2. Camera tự động bật
-3. Hệ thống nhận diện khuôn mặt real-time
-4. Khi nhận diện thành công, tự động lưu điểm danh
-5. Hiển thị thông tin sinh viên và ca học
-
-### 6. Xem báo cáo
-
-1. Vào trang **Báo cáo**
-2. Chọn ngày và ca học
-3. Xem danh sách sinh viên đã điểm danh
-
-## Hệ thống ca học
-
-Hệ thống tự động phát hiện ca học dựa trên thời gian hiện tại:
-
-- **Ca 1**: 07:00 - 10:00 (nghỉ 10:00-10:15)
-- **Ca 2**: 10:15 - 13:15 (nghỉ 13:15-13:30)
-- **Ca 3**: 13:30 - 16:30 (nghỉ 16:30-16:45)
-- **Ca 4**: 16:45 - 19:45 (nghỉ 19:45-20:00)
-
-## API Documentation
+##  API Documentation
 
 ### Authentication
+- `POST /api/auth/login` - Đăng nhập
+- `POST /api/auth/logout` - Đăng xuất
 
-**Login**
-```http
-POST /api/auth/login
-Content-Type: application/json
+### Admin Endpoints
+- `GET /api/admin/stats` - Thống kê tổng quan
+- `GET /api/admin/students` - Danh sách sinh viên
+- `POST /api/admin/students` - Tạo sinh viên mới
+- `GET /api/admin/teachers` - Danh sách giáo viên
+- `POST /api/admin/teachers` - Tạo giáo viên mới
+- `GET /api/admin/subjects` - Danh sách môn học
+- `POST /api/admin/subjects` - Tạo môn học mới
+- `GET /api/admin/classes` - Danh sách lớp học
+- `POST /api/admin/classes` - Tạo lớp học mới
 
-{
-  "username": "admin",
-  "password": "admin"
-}
-```
+### Teacher Endpoints
+- `GET /api/teacher/my-classes` - Danh sách lớp được phân công
+- `GET /api/teacher/classes/{class_id}/students` - Danh sách sinh viên trong lớp
+- `GET /api/teacher/students` - Danh sách tất cả sinh viên (để thêm vào lớp)
+- `POST /api/teacher/classes/{class_id}/students` - Thêm sinh viên vào lớp
+- `GET /api/teacher/attendance-sessions` - Danh sách buổi điểm danh
+- `POST /api/teacher/attendance-sessions` - Tạo buổi điểm danh mới
+- `POST /api/teacher/attendance` - Điểm danh thủ công
 
-**Response**
-```json
-{
-  "session_id": "uuid-string",
-  "message": "Login successful"
-}
-```
+### Student Endpoints
+- `GET /api/student/my-classes` - Danh sách lớp đang học
+- `GET /api/student/my-attendance` - Lịch sử điểm danh
+- `GET /api/student/profile` - Thông tin cá nhân
 
-### Students
+### Face Recognition Endpoints
+- `POST /api/face/upload-images` - Upload ảnh khuôn mặt
+- `POST /api/face/train` - Train model nhận diện
+- `POST /api/face/recognize` - Nhận diện khuôn mặt
 
-**Get all students**
-```http
-GET /api/admin/students
-session-id: <session_id>
-```
-
-**Create student** (auto-generate student_code)
-```http
-POST /api/admin/students
-session-id: <session_id>
-Content-Type: application/json
-
-{
-  "full_name": "Nguyen Van A",
-  "email": "a@example.com",
-  "year": 2024
-}
-```
-
-### Teachers
-
-**Get all teachers**
-```http
-GET /api/admin/teachers
-session-id: <session_id>
-```
-
-**Create teacher** (auto-generate teacher_code)
-```http
-POST /api/admin/teachers
-session-id: <session_id>
-Content-Type: application/json
-
-{
-  "full_name": "Tran Thi B",
-  "email": "b@example.com",
-  "department": "Computer Science"
-}
-```
-
-### Classes
-
-**Get all classes**
-```http
-GET /api/admin/classes
-session-id: <session_id>
-```
-
-**Create class** (auto-generate class_code)
-```http
-POST /api/admin/classes
-session-id: <session_id>
-Content-Type: application/json
-
-{
-  "class_name": "Web Development",
-  "teacher_id": 1,
-  "semester": "HK1",
-  "year": 2024
-}
-```
-
-### Face Recognition
-
-**Capture face**
-```http
-POST /api/face/capture
-Content-Type: application/json
-
-{
-  "student_id": 1,
-  "image": "base64-encoded-image"
-}
-```
-
-**Train model**
-```http
-POST /api/face/train
-```
-
-**Recognize face**
-```http
-POST /api/face/recognize
-Content-Type: application/json
-
-{
-  "image": "base64-encoded-image"
-}
-```
-
-Xem chi tiết tại: [FRONTEND_API_INTEGRATION.md](FRONTEND_API_INTEGRATION.md)
-
-## Cấu trúc thư mục
+##  Cấu trúc thư mục
 
 ```
 Face-Recognition/
-├── api/                    # Backend API
-│   ├── routers/           # API routes
-│   │   ├── auth.py       # Authentication
-│   │   ├── admin.py      # Admin CRUD
-│   │   └── face.py       # Face recognition
-│   ├── services/          # Business logic
-│   ├── models.py          # Database models
-│   ├── schemas.py         # Pydantic schemas
-│   ├── database.py        # Database connection
-│   ├── config.py          # Configuration
-│   ├── main.py           # FastAPI app
-│   └── requirements.txt   # Python dependencies
-├── Dataset/              # Face images
-│   └── FaceData/
-│       ├── raw/         # Raw captured images
-│       └── processed/   # Processed images
-├── Models/              # Trained models
-│   ├── svm_model.pkl   # SVM classifier
-│   └── label_encoder.pkl
-├── Dockerfile           # Docker image
-├── docker-compose.yml   # Docker Compose config
-└── README.md           # This file
+ api/                        # Backend FastAPI
+    routers/               # API routes
+    models.py              # Database models
+    database.py            # Database connection
+    main.py                # FastAPI app
+    requirements.txt       # Python dependencies
+    seed_data.py           # Database seeding script
+    .env                   # Environment variables
+ face_recognition_app/      # Flutter mobile app
+    lib/
+       pages/            # UI screens
+       widgets/          # Reusable widgets
+       main.dart         # App entry point
+    pubspec.yaml          # Flutter dependencies
+ src/                       # Face recognition source code
+ Models/                    # Trained models
+ Dataset/                   # Face images dataset
+ Dockerfile                 # Docker image definition
+ docker-compose.yml         # Docker compose config
+ entrypoint.sh             # Docker entrypoint script
+ run_backend.bat           # Script chạy backend (Windows)
+ run_flutter.bat           # Script chạy Flutter (Windows)
+ README.md                 # This file
 ```
 
-## Tài liệu
+##  Troubleshooting
 
-- [FRONTEND_API_INTEGRATION.md](FRONTEND_API_INTEGRATION.md) - Hướng dẫn tích hợp API
-- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Hướng dẫn deploy với Docker
+### Backend không kết nối được database
+- Kiểm tra file `.env` có đúng thông tin database
+- Kiểm tra MySQL server đang chạy
+- Kiểm tra firewall không block port 3306
 
-## Troubleshooting
+### Flutter không kết nối được backend
+- Kiểm tra backend đang chạy tại http://localhost:8000
+- Kiểm tra file `lib/constants/api_constants.dart` có đúng base URL
+- Nếu chạy trên emulator Android, sử dụng `10.0.2.2` thay vì `localhost`
 
-### Lỗi khi train model
+### Docker container không khởi động
+- Kiểm tra Docker Desktop đang chạy
+- Kiểm tra port 8000 không bị chiếm bởi process khác
+- Xem logs: `docker-compose logs -f`
 
-- Đảm bảo đã chụp đủ 50 ảnh cho mỗi sinh viên
-- Kiểm tra thư mục `Dataset/FaceData/processed/` có ảnh không
-- Xóa cache Python: `rm -rf api/__pycache__`
-
-### Nhận diện không chính xác
-
-- Tăng số lượng ảnh chụp (hiện tại: 50 ảnh)
-- Đảm bảo ánh sáng tốt khi chụp
-- Chụp ảnh từ nhiều góc độ khác nhau
-- Train lại model sau khi chụp thêm ảnh
-
-### CORS errors
-
-- Kiểm tra API đang chạy trên port 8000
-- Kiểm tra `API_BASE_URL` trong `frontend/js/api.js`
-- Kiểm tra CORS settings trong `api/main.py`
-
-## License
+##  License
 
 MIT License
 
+##  Contributors
+
+- Đại học Thủy Lợi (TLU)

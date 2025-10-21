@@ -371,6 +371,184 @@ class _AdminClassDetailPageState extends State<AdminClassDetailPage>
     }
   }
 
+  Future<void> _showEditScheduleDialog(Map<String, dynamic> schedule) async {
+    final formKey = GlobalKey<FormState>();
+    int? dayOfWeek = schedule['day_of_week'];
+
+    // Parse time strings to TimeOfDay
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    if (schedule['start_time'] != null) {
+      final parts = schedule['start_time'].toString().split(':');
+      startTime = TimeOfDay(
+        hour: int.parse(parts[0]),
+        minute: int.parse(parts[1]),
+      );
+    }
+    if (schedule['end_time'] != null) {
+      final parts = schedule['end_time'].toString().split(':');
+      endTime = TimeOfDay(
+        hour: int.parse(parts[0]),
+        minute: int.parse(parts[1]),
+      );
+    }
+
+    final roomController = TextEditingController(text: schedule['room']);
+    String mode = schedule['mode'] ?? 'offline';
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Sửa lịch học'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(
+                      labelText: 'Thứ *',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: dayOfWeek,
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('Thứ 2')),
+                      DropdownMenuItem(value: 2, child: Text('Thứ 3')),
+                      DropdownMenuItem(value: 3, child: Text('Thứ 4')),
+                      DropdownMenuItem(value: 4, child: Text('Thứ 5')),
+                      DropdownMenuItem(value: 5, child: Text('Thứ 6')),
+                      DropdownMenuItem(value: 6, child: Text('Thứ 7')),
+                      DropdownMenuItem(value: 7, child: Text('Chủ nhật')),
+                    ],
+                    onChanged: (value) => setState(() => dayOfWeek = value),
+                    validator: (v) => v == null ? 'Chọn thứ' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    title: const Text('Giờ bắt đầu'),
+                    subtitle: Text(startTime?.format(context) ?? 'Chưa chọn'),
+                    trailing: const Icon(Icons.access_time),
+                    onTap: () async {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: startTime ?? TimeOfDay.now(),
+                      );
+                      if (time != null) setState(() => startTime = time);
+                    },
+                  ),
+                  ListTile(
+                    title: const Text('Giờ kết thúc'),
+                    subtitle: Text(endTime?.format(context) ?? 'Chưa chọn'),
+                    trailing: const Icon(Icons.access_time),
+                    onTap: () async {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: endTime ?? TimeOfDay.now(),
+                      );
+                      if (time != null) setState(() => endTime = time);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: roomController,
+                    decoration: const InputDecoration(
+                      labelText: 'Phòng học *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) => v?.isEmpty ?? true ? 'Nhập phòng' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Hình thức',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: mode,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'offline',
+                        child: Text('Offline'),
+                      ),
+                      DropdownMenuItem(value: 'online', child: Text('Online')),
+                    ],
+                    onChanged: (value) => setState(() => mode = value!),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate() &&
+                    startTime != null &&
+                    endTime != null) {
+                  Navigator.pop(context);
+                  await _editSchedule(
+                    schedule['id'],
+                    dayOfWeek!,
+                    startTime!,
+                    endTime!,
+                    roomController.text,
+                    mode,
+                  );
+                }
+              },
+              child: const Text('Cập nhật'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editSchedule(
+    int scheduleId,
+    int dayOfWeek,
+    TimeOfDay startTime,
+    TimeOfDay endTime,
+    String room,
+    String mode,
+  ) async {
+    try {
+      final sessionId = await _authService.getSessionId();
+      if (sessionId == null) return;
+
+      final response = await http.put(
+        Uri.parse('${ApiConstants.baseUrl}/admin/schedules/$scheduleId'),
+        headers: {'session-id': sessionId, 'Content-Type': 'application/json'},
+        body: json.encode({
+          'day_of_week': dayOfWeek,
+          'start_time':
+              '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00',
+          'end_time':
+              '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00',
+          'room': room,
+          'mode': mode,
+        }),
+      );
+
+      if (response.statusCode == 200 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cập nhật lịch học thành công!')),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    }
+  }
+
   Future<void> _deleteSchedule(int scheduleId) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -558,9 +736,19 @@ class _AdminClassDetailPageState extends State<AdminClassDetailPage>
                             Text('Hình thức: ${schedule['mode']}'),
                           ],
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _deleteSchedule(schedule['id']),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () =>
+                                  _showEditScheduleDialog(schedule),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _deleteSchedule(schedule['id']),
+                            ),
+                          ],
                         ),
                       ),
                     );

@@ -34,9 +34,18 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
       final headers = {'session-id': sessionId};
 
       final responses = await Future.wait([
-        http.get(Uri.parse('${ApiConstants.baseUrl}/admin/classes'), headers: headers),
-        http.get(Uri.parse('${ApiConstants.baseUrl}/admin/teachers'), headers: headers),
-        http.get(Uri.parse('${ApiConstants.baseUrl}/admin/subjects'), headers: headers),
+        http.get(
+          Uri.parse('${ApiConstants.baseUrl}/admin/classes'),
+          headers: headers,
+        ),
+        http.get(
+          Uri.parse('${ApiConstants.baseUrl}/admin/teachers'),
+          headers: headers,
+        ),
+        http.get(
+          Uri.parse('${ApiConstants.baseUrl}/admin/subjects'),
+          headers: headers,
+        ),
       ]);
 
       if (responses[0].statusCode == 200) {
@@ -55,6 +64,10 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
   Future<void> _showAddDialog() async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
+    final semesterController = TextEditingController();
+    final yearController = TextEditingController(
+      text: DateTime.now().year.toString(),
+    );
     int? selectedTeacherId;
     int? selectedSubjectId;
 
@@ -75,7 +88,8 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                       labelText: 'Tên lớp *',
                       border: OutlineInputBorder(),
                     ),
-                    validator: (v) => v?.isEmpty ?? true ? 'Nhập tên lớp' : null,
+                    validator: (v) =>
+                        v?.isEmpty ?? true ? 'Nhập tên lớp' : null,
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
@@ -90,7 +104,8 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                         child: Text(teacher['full_name']),
                       );
                     }).toList(),
-                    onChanged: (value) => setState(() => selectedTeacherId = value),
+                    onChanged: (value) =>
+                        setState(() => selectedTeacherId = value),
                     validator: (v) => v == null ? 'Chọn giáo viên' : null,
                   ),
                   const SizedBox(height: 12),
@@ -106,8 +121,37 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                         child: Text(subject['subject_name']),
                       );
                     }).toList(),
-                    onChanged: (value) => setState(() => selectedSubjectId = value),
+                    onChanged: (value) =>
+                        setState(() => selectedSubjectId = value),
                     validator: (v) => v == null ? 'Chọn môn học' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: semesterController,
+                    decoration: const InputDecoration(
+                      labelText: 'Học kỳ *',
+                      border: OutlineInputBorder(),
+                      hintText: 'VD: HK1, HK2',
+                    ),
+                    validator: (v) => v?.isEmpty ?? true ? 'Nhập học kỳ' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: yearController,
+                    decoration: const InputDecoration(
+                      labelText: 'Năm học *',
+                      border: OutlineInputBorder(),
+                      hintText: 'VD: 2024',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v?.isEmpty ?? true) return 'Nhập năm học';
+                      final year = int.tryParse(v!);
+                      if (year == null || year < 2000 || year > 2100) {
+                        return 'Năm học không hợp lệ';
+                      }
+                      return null;
+                    },
                   ),
                 ],
               ),
@@ -126,6 +170,8 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                     nameController.text,
                     selectedTeacherId!,
                     selectedSubjectId!,
+                    semesterController.text,
+                    int.parse(yearController.text),
                   );
                 }
               },
@@ -137,7 +183,13 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
     );
   }
 
-  Future<void> _addClass(String className, int teacherId, int subjectId) async {
+  Future<void> _addClass(
+    String className,
+    int teacherId,
+    int subjectId,
+    String semester,
+    int year,
+  ) async {
     try {
       final sessionId = await _authService.getSessionId();
       if (sessionId == null) return;
@@ -149,6 +201,8 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
           'class_name': className,
           'teacher_id': teacherId,
           'subject_id': subjectId,
+          'semester': semester,
+          'year': year,
         }),
       );
 
@@ -160,9 +214,173 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    }
+  }
+
+  Future<void> _showEditDialog(Map<String, dynamic> cls) async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: cls['class_name']);
+    final semesterController = TextEditingController(
+      text: cls['semester'] ?? '',
+    );
+    final yearController = TextEditingController(
+      text: cls['year']?.toString() ?? '',
+    );
+    int? selectedTeacherId = cls['teacher_id'];
+    int? selectedSubjectId = cls['subject_id'];
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Sửa lớp học'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tên lớp *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) =>
+                        v?.isEmpty ?? true ? 'Nhập tên lớp' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(
+                      labelText: 'Giáo viên *',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: selectedTeacherId,
+                    items: _teachers.map<DropdownMenuItem<int>>((teacher) {
+                      return DropdownMenuItem<int>(
+                        value: teacher['id'],
+                        child: Text(teacher['full_name']),
+                      );
+                    }).toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedTeacherId = value),
+                    validator: (v) => v == null ? 'Chọn giáo viên' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    decoration: const InputDecoration(
+                      labelText: 'Môn học *',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: selectedSubjectId,
+                    items: _subjects.map<DropdownMenuItem<int>>((subject) {
+                      return DropdownMenuItem<int>(
+                        value: subject['id'],
+                        child: Text(subject['subject_name']),
+                      );
+                    }).toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedSubjectId = value),
+                    validator: (v) => v == null ? 'Chọn môn học' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: semesterController,
+                    decoration: const InputDecoration(
+                      labelText: 'Học kỳ *',
+                      border: OutlineInputBorder(),
+                      hintText: 'VD: HK1, HK2',
+                    ),
+                    validator: (v) => v?.isEmpty ?? true ? 'Nhập học kỳ' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: yearController,
+                    decoration: const InputDecoration(
+                      labelText: 'Năm học *',
+                      border: OutlineInputBorder(),
+                      hintText: 'VD: 2024',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v?.isEmpty ?? true) return 'Nhập năm học';
+                      final year = int.tryParse(v!);
+                      if (year == null || year < 2000 || year > 2100) {
+                        return 'Năm học không hợp lệ';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context);
+                  await _editClass(
+                    cls['id'],
+                    nameController.text,
+                    selectedTeacherId!,
+                    selectedSubjectId!,
+                    semesterController.text,
+                    int.parse(yearController.text),
+                  );
+                }
+              },
+              child: const Text('Cập nhật'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editClass(
+    int id,
+    String className,
+    int teacherId,
+    int subjectId,
+    String semester,
+    int year,
+  ) async {
+    try {
+      final sessionId = await _authService.getSessionId();
+      if (sessionId == null) return;
+
+      final response = await http.put(
+        Uri.parse('${ApiConstants.baseUrl}/admin/classes/$id'),
+        headers: {'session-id': sessionId, 'Content-Type': 'application/json'},
+        body: json.encode({
+          'class_name': className,
+          'teacher_id': teacherId,
+          'subject_id': subjectId,
+          'semester': semester,
+          'year': year,
+        }),
+      );
+
+      if (response.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e')),
+          const SnackBar(content: Text('Cập nhật lớp học thành công!')),
         );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
       }
     }
   }
@@ -206,9 +424,9 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
       }
     }
   }
@@ -251,7 +469,9 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                             ),
                             title: Text(
                               cls['class_name'] ?? '',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,21 +485,35 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.arrow_forward, color: Colors.blue),
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Colors.blue,
+                                  ),
+                                  onPressed: () => _showEditDialog(cls),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.arrow_forward,
+                                    color: Colors.green,
+                                  ),
                                   onPressed: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => AdminClassDetailPage(
-                                          classId: cls['id'],
-                                          className: cls['class_name'],
-                                        ),
+                                        builder: (context) =>
+                                            AdminClassDetailPage(
+                                              classId: cls['id'],
+                                              className: cls['class_name'],
+                                            ),
                                       ),
                                     );
                                   },
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
                                   onPressed: () => _deleteClass(
                                     cls['id'],
                                     cls['class_name'],
@@ -295,4 +529,3 @@ class _AdminClassesPageState extends State<AdminClassesPage> {
     );
   }
 }
-
