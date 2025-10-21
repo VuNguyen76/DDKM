@@ -49,6 +49,31 @@ class AttendanceInfo(BaseModel):
     status: str
     confidence: Optional[float]
 
+@router.get("/students", response_model=List[StudentInfo])
+def get_all_students(user: User = Depends(require_teacher), db: Session = Depends(get_db)):
+    """Get all students (for adding to class)"""
+    if not user.teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    students = db.query(Student).all()
+    result = []
+    for student in students:
+        # Check if student has face data
+        face_data_path = f"Dataset/FaceData/processed/{student.student_code}"
+        has_face_data = os.path.exists(face_data_path) and len(os.listdir(face_data_path)) > 0
+
+        result.append(StudentInfo(
+            student_id=student.id,
+            student_code=student.student_code,
+            full_name=student.full_name,
+            email=student.email,
+            phone=student.phone,
+            year=student.year,
+            has_face_data=has_face_data
+        ))
+
+    return result
+
 @router.get("/my-classes", response_model=List[ClassInfo])
 def get_my_classes(user: User = Depends(require_teacher), db: Session = Depends(get_db)):
     if not user.teacher:

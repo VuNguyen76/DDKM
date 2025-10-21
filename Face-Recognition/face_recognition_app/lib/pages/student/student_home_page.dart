@@ -143,7 +143,7 @@ class _StudentHomePageState extends State<StudentHomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEAF4FB),
+      backgroundColor: const Color(0xFFEAF7FF),
       appBar: AppBar(
         title: const Text('Trang sinh viên'),
         backgroundColor: Colors.blue.shade700,
@@ -152,238 +152,628 @@ class _StudentHomePageState extends State<StudentHomePage>
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Hôm nay'),
-            Tab(text: 'Lịch sử'),
-          ],
-        ),
       ),
       body: _isLoading
           ? const CustomLoading()
-          : TabBarView(
-              controller: _tabController,
-              children: [_buildTodayTab(), _buildHistoryTab()],
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildUserInfoCard(),
+                    const SizedBox(height: 16),
+                    _buildTodayScheduleCard(),
+                    const SizedBox(height: 16),
+                    _buildAttendanceHistoryCard(),
+                  ],
+                ),
+              ),
             ),
     );
   }
 
-  Widget _buildTodayTab() {
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // User info card
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: InkWell(
-                onTap: () {
-                  // Navigate to profile page
-                  Navigator.pushNamed(context, '/student-profile');
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundColor: Colors.blue.shade100,
-                        child: Icon(
-                          Icons.person,
-                          size: 45,
-                          color: Colors.blue.shade700,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _userInfo?['full_name'] ?? 'Sinh viên',
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'MSSV: ${_userInfo?['student']?['student_code'] ?? ''}',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.grey.shade600,
-                        size: 20,
-                      ),
-                    ],
+  // 👤 Thẻ thông tin người dùng
+  Widget _buildUserInfoCard() {
+    final studentName = _userInfo?['full_name'] ?? 'Sinh viên';
+    final studentCode = _userInfo?['student_code'] ?? 'N/A';
+
+    return Container(
+      width: 394,
+      height: 103,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFBEE5FF)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.pushNamed(context, '/student-profile');
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              // Icon trái
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(shape: BoxShape.circle),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/images/ellipse15.png',
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(width: 12),
+              // Văn bản
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      studentName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'MSSV: $studentCode',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Icon phải
+              const Icon(Icons.chevron_right, size: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-            // Today's schedule
-            Text(
-              'Lịch học hôm nay',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue.shade900,
+  // 📅 Thẻ "Lịch học hôm nay"
+  Widget _buildTodayScheduleCard() {
+    // Format date
+    final now = DateTime.now();
+    final weekdays = [
+      'Chủ nhật',
+      'Thứ hai',
+      'Thứ ba',
+      'Thứ tư',
+      'Thứ năm',
+      'Thứ sáu',
+      'Thứ bảy',
+    ];
+    final dateStr =
+        '${weekdays[now.weekday % 7]}, ${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}';
+
+    return Container(
+      width: 394,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFBEE5FF)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          InkWell(
+            onTap: () {
+              _showAllSchedules();
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, size: 15),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Lịch học hôm nay',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            _todaySchedule.isEmpty
-                ? Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Center(
-                        child: Text(
-                          'Không có lịch học hôm nay',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ),
+          ),
+          // Sub text
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text(
+              dateStr,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Bên trong - 2 thẻ con cho mỗi tiết học
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: _todaySchedule.isEmpty
+                ? Container(
+                    height: 100,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Không có lịch học hôm nay',
+                      style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
                 : Column(
                     children: _todaySchedule.map((schedule) {
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.blue.shade100,
-                            child: Icon(
-                              Icons.schedule,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                          title: Text(
-                            schedule['subject_name'] ?? '',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${schedule['start_time']} - ${schedule['end_time']}',
-                              ),
-                              Text(
-                                'Lớp: ${schedule['class_code']} | Phòng: ${schedule['room']}',
-                              ),
-                              Text(
-                                'GV: ${schedule['teacher_name']} | ${schedule['mode']}',
-                              ),
-                            ],
-                          ),
-                          trailing: ElevatedButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => FaceAttendancePage(
-                                    classId: schedule['class_id'],
-                                    className: schedule['subject_name'],
-                                  ),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Điểm danh'),
-                          ),
-                        ),
-                      );
+                      return _buildScheduleItem(schedule);
                     }).toList(),
                   ),
-          ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  // 🕖 Thẻ con – Môn học
+  Widget _buildScheduleItem(Map<String, dynamic> schedule) {
+    final startTime = schedule['start_time']?.toString().substring(0, 5) ?? '';
+    final subjectName = schedule['subject_name'] ?? '';
+    final room = schedule['room'] ?? '';
+
+    return Container(
+      width: 360,
+      height: 59,
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFBEE5FF)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FaceAttendancePage(
+                classId: schedule['class_id'],
+                className: subjectName,
+              ),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: Row(
+            children: [
+              // Time
+              Text(
+                startTime,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      subjectName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      room,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHistoryTab() {
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16.0),
-        itemCount: _attendanceHistory.length,
-        itemBuilder: (context, index) {
-          final record = _attendanceHistory[index];
-          final status = record['status'] ?? '';
-          Color statusColor = Colors.grey;
-          String statusText = status;
-
-          if (status == 'present') {
-            statusColor = Colors.green;
-            statusText = 'Có mặt';
-          } else if (status == 'late') {
-            statusColor = Colors.orange;
-            statusText = 'Muộn';
-          } else if (status == 'absent') {
-            statusColor = Colors.red;
-            statusText = 'Vắng';
-          }
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: statusColor,
-                child: Icon(
-                  status == 'present'
-                      ? Icons.check
-                      : status == 'late'
-                      ? Icons.access_time
-                      : Icons.close,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text(
-                record['class_name'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                'Ngày: ${record['session_date']}\n'
-                'Giờ: ${record['start_time']} - ${record['end_time']}\n'
-                'Điểm danh: ${record['check_in_time'] ?? 'Chưa điểm danh'}',
-              ),
-              trailing: Chip(
-                label: Text(statusText),
-                backgroundColor: statusColor.withOpacity(0.2),
-                labelStyle: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
-                ),
+  // 🕘 Thẻ "Lịch sử điểm danh"
+  Widget _buildAttendanceHistoryCard() {
+    return Container(
+      width: 394,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFBEE5FF)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          InkWell(
+            onTap: () {
+              _showAllAttendanceHistory();
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.history, size: 15),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Lịch sử điểm danh',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
               ),
             ),
-          );
-        },
+          ),
+          // Body
+          Container(
+            height: 150,
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: _attendanceHistory.isEmpty
+                ? Center(
+                    child: Text(
+                      'Chưa có lịch sử điểm danh',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _attendanceHistory.length > 5
+                        ? 5
+                        : _attendanceHistory.length,
+                    itemBuilder: (context, index) {
+                      final record = _attendanceHistory[index];
+                      final status = record['status'] ?? '';
+                      String statusText = status;
+                      Color statusColor = Colors.grey;
+
+                      if (status == 'present') {
+                        statusText = 'Có mặt';
+                        statusColor = Colors.green;
+                      } else if (status == 'late') {
+                        statusText = 'Muộn';
+                        statusColor = Colors.orange;
+                      } else if (status == 'absent') {
+                        statusText = 'Vắng';
+                        statusColor = Colors.red;
+                      }
+
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8.0,
+                        ),
+                        leading: Icon(
+                          status == 'present'
+                              ? Icons.check_circle
+                              : status == 'late'
+                              ? Icons.access_time
+                              : Icons.cancel,
+                          color: statusColor,
+                          size: 20,
+                        ),
+                        title: Text(
+                          record['class_name'] ?? record['subject_name'] ?? '',
+                          style: const TextStyle(fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          record['session_date'] ?? record['date'] ?? '',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: statusColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _showAllAttendanceHistory() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Lịch sử điểm danh'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: _attendanceHistory.isEmpty
+              ? Center(
+                  child: Text(
+                    'Chưa có lịch sử điểm danh',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _attendanceHistory.length,
+                  itemBuilder: (context, index) {
+                    final record = _attendanceHistory[index];
+                    final status = record['status'] ?? '';
+                    String statusText = status;
+                    Color statusColor = Colors.grey;
+
+                    if (status == 'present') {
+                      statusText = 'Có mặt';
+                      statusColor = Colors.green;
+                    } else if (status == 'late') {
+                      statusText = 'Muộn';
+                      statusColor = Colors.orange;
+                    } else if (status == 'absent') {
+                      statusText = 'Vắng';
+                      statusColor = Colors.red;
+                    }
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: statusColor,
+                          child: Icon(
+                            status == 'present'
+                                ? Icons.check
+                                : status == 'late'
+                                ? Icons.access_time
+                                : Icons.close,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(
+                          record['class_name'] ?? record['subject_name'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Ngày: ${record['session_date'] ?? record['date'] ?? ''}\n'
+                          'Giờ: ${record['start_time'] ?? ''} - ${record['end_time'] ?? ''}\n'
+                          'Điểm danh: ${record['check_in_time'] ?? 'Chưa điểm danh'}',
+                        ),
+                        trailing: Chip(
+                          label: Text(statusText),
+                          backgroundColor: statusColor.withValues(alpha: 0.2),
+                          labelStyle: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAllSchedules() async {
+    // Get all schedules for all days
+    final sessionId = await _authService.getSessionId();
+    if (sessionId == null) return;
+
+    if (!mounted) return;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CustomLoading()),
+    );
+
+    try {
+      // Get schedules for all 7 days
+      Map<int, List<dynamic>> schedulesByDay = {};
+      final weekdays = [
+        'Chủ nhật',
+        'Thứ hai',
+        'Thứ ba',
+        'Thứ tư',
+        'Thứ năm',
+        'Thứ sáu',
+        'Thứ bảy',
+      ];
+
+      // Get current week dates
+      final now = DateTime.now();
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+
+      for (int i = 0; i < 7; i++) {
+        final date = monday.add(Duration(days: i));
+        final dateStr =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+        final response = await http.get(
+          Uri.parse(
+            '${ApiConstants.baseUrl}/student/my-schedule?schedule_date=$dateStr',
+          ),
+          headers: {'session-id': sessionId},
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final schedules = data['schedules'] ?? [];
+          if (schedules.isNotEmpty) {
+            schedulesByDay[date.weekday % 7] = schedules;
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      // Close loading dialog
+      Navigator.pop(context);
+
+      // Show all schedules dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Lịch học cả tuần'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 500,
+            child: schedulesByDay.isEmpty
+                ? Center(
+                    child: Text(
+                      'Không có lịch học',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: 7,
+                    itemBuilder: (context, dayIndex) {
+                      final schedules = schedulesByDay[dayIndex] ?? [];
+                      if (schedules.isEmpty) return const SizedBox.shrink();
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Day header
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(4),
+                                  topRight: Radius.circular(4),
+                                ),
+                              ),
+                              child: Text(
+                                weekdays[dayIndex],
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            // Schedules for this day
+                            ...schedules.map((schedule) {
+                              final startTime =
+                                  schedule['start_time']?.toString().substring(
+                                    0,
+                                    5,
+                                  ) ??
+                                  '';
+                              final endTime =
+                                  schedule['end_time']?.toString().substring(
+                                    0,
+                                    5,
+                                  ) ??
+                                  '';
+                              final subjectName =
+                                  schedule['subject_name'] ?? '';
+                              final room = schedule['room'] ?? '';
+                              final teacherName =
+                                  schedule['teacher_name'] ?? '';
+
+                              return ListTile(
+                                dense: true,
+                                leading: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      startTime,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      endTime,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                title: Text(
+                                  subjectName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                subtitle: Text('$room • $teacherName'),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.camera_alt),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => FaceAttendancePage(
+                                          classId: schedule['class_id'],
+                                          className: subjectName,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Đóng'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // Close loading dialog if error
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
   }
 }

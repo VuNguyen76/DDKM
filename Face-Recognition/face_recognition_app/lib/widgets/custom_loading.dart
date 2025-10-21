@@ -9,40 +9,17 @@ class CustomLoading extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Logo Ellipse 15 to bằng khung cũ (343x187 -> dùng 187 làm size)
           Container(
-            width: 343,
+            width: 187,
             height: 187,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.blue.shade700, Colors.blue.shade400],
-              ),
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.blue.withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.school, size: 80, color: Colors.white),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'TLU',
-                    style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 4,
-                    ),
-                  ),
-                ],
+            decoration: const BoxDecoration(shape: BoxShape.circle),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/ellipse15.png',
+                width: 187,
+                height: 187,
+                fit: BoxFit.cover,
               ),
             ),
           ),

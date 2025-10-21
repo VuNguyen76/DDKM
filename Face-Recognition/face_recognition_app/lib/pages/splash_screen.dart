@@ -12,14 +12,14 @@ class _SplashScreenState extends State<SplashScreen> {
   // Màu sắc
   static const Color backgroundColor = Color(0xFFEAF7FF);
   static const Color textColor = Color(0xFF1F365C);
-  
+
   // Kích thước & khoảng cách
   static const double fontSize = 18.0;
   static const double logoMaxWidth = 343.0;
   static const double logoMaxHeight = 187.0;
   static const double horizontalPadding = 32.0;
   static const double logoTextSpacing = 20.0;
-  
+
   // Animation state
   int _dotCount = 0;
   Timer? _dotTimer;
@@ -68,7 +68,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     // Tính toán kích thước logo responsive
     final logoWidth = (0.8 * screenWidth).clamp(0.0, logoMaxWidth);
 
@@ -82,21 +82,25 @@ class _SplashScreenState extends State<SplashScreen> {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo
-                ConstrainedBox(
+                // Logo Ellipse 15
+                Container(
+                  width: logoWidth,
+                  height: logoWidth, // Hình tròn nên width = height
                   constraints: BoxConstraints(
                     maxWidth: logoMaxWidth,
                     maxHeight: logoMaxHeight,
                   ),
-                  child: Image.asset(
-                    'assets/images/logo.jpg',
-                    width: logoWidth,
-                    fit: BoxFit.contain,
+                  decoration: const BoxDecoration(shape: BoxShape.circle),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/images/ellipse15.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-                
+
                 const SizedBox(height: logoTextSpacing),
-                
+
                 // Text "Đang tải . . ." với animation
                 SizedBox(
                   height: 30, // Chiều cao cố định để tránh layout shift
@@ -120,4 +124,3 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 }
-
